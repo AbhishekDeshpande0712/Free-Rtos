@@ -1,0 +1,147 @@
+
+#include<stdio.h>
+#include<stdint.h>
+#include<string.h>
+#include "stm32f4xx.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t xTask_handle1 = NULL;
+TaskHandle_t xTask_handle2 = NULL;
+
+void vTask1_handler(char *params);
+void vTask2_handler(char *params);
+
+#ifdef  USE_SEMIHOSTING
+// semi hosting
+extern void initialise_monitor_handles();
+#endif
+
+// UART
+static void prvSetupHardware(void);
+static void prvSetupUart(void);
+
+char msg1[50] = "HELLO FROM WORLD 1";
+char msg2[50] = "HELLO FROM WORLD 2";
+
+ uint8_t flag = 1;
+// char usr_msg[250];
+
+void printmsg(char *msg);
+
+int main(void)
+{
+	DWT->CTRL |= (1 << 0);
+
+#ifdef  USE_SEMIHOSTING
+	// semihosting
+	initialise_monitor_handles();
+#endif
+	// Reset the RCC cnfiguration to default reset state
+	RCC_DeInit();
+
+	// update the systemcoreclock variable
+	SystemCoreClockUpdate();
+
+	// setting up UART
+	prvSetupHardware();
+
+	//printing hello world
+
+	//segger
+	SEGGER_SYSVIEW_Conf();
+	SEGGER_SYSVIEW_Start();
+
+	//lets create two tasks
+	xTaskCreate( vTask1_handler,"Task-1", configMINIMAL_STACK_SIZE, msg1 , 2, &xTask_handle1 );
+
+	xTaskCreate( vTask2_handler,"Task-2", configMINIMAL_STACK_SIZE, msg2 , 2, &xTask_handle2 );
+
+	vTaskStartScheduler();
+
+	for(;;);
+}
+
+void vTask1_handler(char *str)
+{
+ while(1)
+ {
+	 if(flag == 1)
+	 {
+		 flag = 0;
+		  printmsg("hello from task 1\n");
+		printf("%s\n", str);
+ 	 	 flag = 1;
+ 	 	traceISR_EXIT_TO_SCHEDULER();
+ 	 	 taskYIELD();
+	 }
+ }
+}
+
+void vTask2_handler(char *str)
+{
+	while(1)
+	 {
+		 if(flag == 1)
+		 {
+			 flag = 0;
+			 printmsg("hello from task 2\n");
+			 printf("%s\n",str);
+	 	 	 flag = 1;
+	 	 	traceISR_EXIT_TO_SCHEDULER();
+	 	  	taskYIELD();
+		 }
+	 }
+}
+
+static void prvSetupUart(void)
+{
+	GPIO_InitTypeDef gpio_uart_pins;
+		USART_InitTypeDef uart2_init;
+	// 1. Enable UART 2 and GPIO A peripheral clock
+		RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
+		RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+		// PA2 is UART TX and PA3 is UART RX
+
+		//initialising struct gpio_uart_pins to zero
+		memset(&gpio_uart_pins,0,sizeof(gpio_uart_pins));
+
+		// 2. Alternate functions config to make PA2 act as TX and PA3 as RX
+		gpio_uart_pins.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_3;
+		gpio_uart_pins.GPIO_Mode = GPIO_Mode_AF;
+		gpio_uart_pins.GPIO_PuPd = GPIO_PuPd_UP;
+		GPIO_Init(GPIOA, &gpio_uart_pins);
+
+		//AF mode settings
+		 GPIO_PinAFConfig(GPIOA, GPIO_PinSource2, GPIO_AF_USART2);
+		 GPIO_PinAFConfig(GPIOA, GPIO_PinSource3, GPIO_AF_USART2);
+
+		 //initialising the struct uart2_init to zero
+		 memset(&uart2_init,0,sizeof(uart2_init));
+
+		 // UART peripheral config
+		 uart2_init.USART_BaudRate = 115200;
+		 uart2_init.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+		 uart2_init.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+		 uart2_init.USART_Parity = USART_Parity_No;
+		 uart2_init.USART_StopBits = USART_StopBits_1;
+		 uart2_init.USART_WordLength = USART_WordLength_8b;
+		 USART_Init(USART2,&uart2_init);
+
+		 // Enable
+		 USART_Cmd(USART2, ENABLE);
+}
+
+static void prvSetupHardware(void)
+{
+	prvSetupUart();
+}
+
+void printmsg(char *msg)
+{
+	for(uint32_t i; i < strlen(msg);i++)
+	{
+	while((USART_GetFlagStatus(USART2, USART_FLAG_TXE))!= SET);
+	USART_SendData(USART2, msg[i]);
+	}
+}

@@ -1,0 +1,145 @@
+/**
+  ******************************************************************************
+  * @file    main.c
+  * @author  Ac6
+  * @version V1.0
+  * @date    01-December-2013
+  * @brief   Default main function.
+  ******************************************************************************
+*/
+
+/**
+  ******************************************************************************
+  * @file    main.c
+  * @author  Ac6
+  * @version V1.0
+  * @date    01-December-2013
+  * @brief   Default main function.
+  ******************************************************************************
+*/
+
+
+#include "stm32f4xx.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "string.h"
+#include<stdio.h>
+
+TaskHandle_t xTaskHandle1 = NULL;
+TaskHandle_t xTaskHandle2 = NULL;
+
+void rtos_delay(uint32_t delay_ms);
+void led_task_handler(void *params);
+void button_task_handler(void *params);
+static void prvSetupHardware(void);
+
+#ifdef  USE_SEMIHOSTING
+// semi hosting
+extern void initialise_monitor_handles();
+#endif
+
+uint8_t flag = 0;
+
+int main(void)
+{
+
+#ifdef  USE_SEMIHOSTING
+	// semihosting
+	  initialise_monitor_handles();
+#endif
+
+	// Reset the RCC cnfiguration to default reset state
+		RCC_DeInit();
+
+		// update the systemcoreclock variable
+		SystemCoreClockUpdate();
+
+		// setting up GPIO's
+		prvSetupHardware();
+		printf("Hello from the other side\n");
+
+		SEGGER_SYSVIEW_Conf();
+		SEGGER_SYSVIEW_Start();
+
+		// creating two tasks
+		xTaskCreate( led_task_handler,"led-Task", 500 , NULL, 2, &xTaskHandle1);
+
+		xTaskCreate( button_task_handler,"button-Task", 500, NULL, 2, &xTaskHandle2);
+
+		vTaskStartScheduler();
+
+	for(;;);
+}
+
+void led_task_handler(void *params)
+{
+	while(1)
+	{
+	if( xTaskNotifyWait(0,0,NULL,0xffffffff) == pdTRUE)
+	{
+		printf("notification recived\n");
+		GPIO_ToggleBits(GPIOA, GPIO_Pin_5);
+	}
+	}
+}
+
+void button_task_handler(void *params)
+{
+	while(1)
+{
+	if(!(GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_13)))
+			{
+				//recieved input
+			printf("recieved input\n");
+				// delay for a few sex
+				rtos_delay(100);
+
+				// notify task 1
+				xTaskNotify(xTaskHandle1,0x0,eNoAction);
+			}
+}
+}
+
+void rtos_delay(uint32_t delay_ms)
+{
+	printf("Entering delay loop\n");
+	uint32_t current_tick = xTaskGetTickCount();
+
+	printf(" current tick count is %d\n", current_tick);
+
+	uint32_t delay_ticks = (configTICK_RATE_HZ * delay_ms)/ 1000;
+
+	while( xTaskGetTickCount() < (current_tick + delay_ticks));
+
+	printf("Exiting delay loop\n");
+}
+
+static void prvSetupHardware(void)
+{
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
+
+	GPIO_InitTypeDef led_init, button_init;
+
+	//clearing the pins before initialising
+		memset(&led_init, 0, sizeof(led_init));
+
+	led_init.GPIO_Mode  = GPIO_Mode_OUT;
+	led_init.GPIO_Pin = GPIO_Pin_5;
+	led_init.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	led_init.GPIO_Speed = GPIO_Medium_Speed;
+	led_init.GPIO_OType = GPIO_OType_PP;
+
+	GPIO_Init(GPIOA,&led_init);
+
+	//clearing the pins before initialising
+			memset(&button_init, 0, sizeof(button_init));
+	button_init.GPIO_Mode = GPIO_Mode_IN;
+	button_init.GPIO_OType  = GPIO_OType_PP;
+	button_init.GPIO_Pin = GPIO_Pin_13;
+	button_init.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	button_init.GPIO_Speed = GPIO_Medium_Speed;;
+
+	GPIO_Init(GPIOC,&button_init);
+
+}

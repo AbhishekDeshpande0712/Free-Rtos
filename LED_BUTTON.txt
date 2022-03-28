@@ -1,0 +1,128 @@
+/**
+  ******************************************************************************
+  * @file    main.c
+  * @author  Ac6
+  * @version V1.0
+  * @date    01-December-2013
+  * @brief   Default main function.
+  ******************************************************************************
+*/
+
+
+#include "stm32f4xx.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "string.h"
+#include<stdio.h>
+
+void led_task_handler(void *params);
+void button_handler();
+static void prvSetupHardware(void);
+
+#ifdef  USE_SEMIHOSTING
+// semi hosting
+extern void initialise_monitor_handles();
+#endif
+
+uint8_t flag = 0;
+
+int main(void)
+{
+
+#ifdef  USE_SEMIHOSTING
+	// semihosting
+	  initialise_monitor_handles();
+#endif
+
+	// Reset the RCC cnfiguration to default reset state
+		RCC_DeInit();
+
+		// update the systemcoreclock variable
+		SystemCoreClockUpdate();
+
+		// setting up GPIO's
+		prvSetupHardware();
+		printf("Hello from the other side\n");
+
+		xTaskCreate( led_task_handler,"led-Task", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+
+		vTaskStartScheduler();
+
+	for(;;);
+}
+
+void led_task_handler(void *params)
+{
+	while(1)
+		{
+			if(flag == 1)
+			{
+				GPIO_WriteBit(GPIOA, GPIO_Pin_5, Bit_SET);
+				printf("button pressed\n");
+			}
+			else
+			{
+				GPIO_WriteBit(GPIOA, GPIO_Pin_5, Bit_RESET);
+			}
+		}
+}
+
+void button_handler()
+{
+flag ^= 1;
+printf("flag set\n");
+}
+
+void EXTI15_10_IRQHandler(void)
+{
+	// clear the flag first
+	printf("Interrupt occured\n");
+	EXTI_ClearITPendingBit(EXTI_Line13);
+	button_handler();
+
+}
+static void prvSetupHardware(void)
+{
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+
+	GPIO_InitTypeDef led_init, button_init;
+
+	//clearing the pins before sending initialising
+		memset(&led_init, 0, sizeof(led_init));
+
+	led_init.GPIO_Mode  = GPIO_Mode_OUT;
+	led_init.GPIO_Pin = GPIO_Pin_5;
+	led_init.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	led_init.GPIO_Speed = GPIO_Medium_Speed;
+	led_init.GPIO_OType = GPIO_OType_PP;
+
+	GPIO_Init(GPIOA,&led_init);
+
+	//clearing the pins before sending initialising
+			memset(&button_init, 0, sizeof(button_init));
+	button_init.GPIO_Mode = GPIO_Mode_IN;
+	button_init.GPIO_OType  = GPIO_OType_PP;
+	button_init.GPIO_Pin = GPIO_Pin_13;
+	button_init.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	button_init.GPIO_Speed = GPIO_Medium_Speed;;
+
+	GPIO_Init(GPIOC,&button_init);
+
+	// EXTI 13 setup
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOC, EXTI_PinSource13);
+
+	EXTI_InitTypeDef exti_init;
+
+	exti_init.EXTI_Mode = EXTI_Mode_Interrupt;
+	exti_init.EXTI_Line = EXTI_Line13;
+	exti_init.EXTI_Trigger = EXTI_Trigger_Falling;
+	exti_init.EXTI_LineCmd = ENABLE;
+
+	EXTI_Init(&exti_init);
+
+	NVIC_SetPriority(EXTI15_10_IRQn, 5);
+	NVIC_EnableIRQ(EXTI15_10_IRQn);
+
+}
